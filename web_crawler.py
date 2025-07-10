@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI-Powered Web Crawler for AI Document Assistant
-Uses OpenAI GPT to intelligently navigate websites and process content before database storage
+Uses LLM to intelligently navigate websites and process content before database storage
 """
 
 import requests
@@ -15,11 +15,7 @@ from pathlib import Path
 import argparse
 from typing import List, Dict, Set, Tuple, Optional
 import logging
-import openai
-from config.config import OPENAI_API_KEY
-
-# Set up OpenAI
-openai.api_key = OPENAI_API_KEY
+from config.config import LLM_API_KEY, LLM_API_URL
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,7 +25,26 @@ class AIContentProcessor:
     """AI-powered content filtering only (no summarization or restructuring)"""
     
     def __init__(self):
-        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        self.api_url = LLM_API_URL
+        self.api_key = LLM_API_KEY
+    
+    def ask_llm(self, prompt: str) -> str:
+        """Send a prompt to the LLM"""
+        payload = {
+            "model": "gpt-4",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ]
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(self.api_url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
     
     def is_page_relevant(self, url: str, title: str, content: str, target_domain: str) -> bool:
         """
@@ -85,14 +100,8 @@ class AIContentProcessor:
             Answer only YES or NO:
             """
             
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-                max_tokens=5
-            )
-            
-            answer = response.choices[0].message.content.strip().lower()
+            response = self.ask_llm(prompt)
+            answer = response.strip().lower()
             return answer.startswith("yes")
             
         except Exception as e:

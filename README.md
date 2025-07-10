@@ -1,22 +1,22 @@
 # AI Document Assistant
 
-A powerful document processing and question-answering system built with Python. The system uses Milvus vector database for efficient semantic search and OpenAI's GPT models for intelligent responses. Features a command-line interface and web crawler for USCIS documents.
+A powerful document processing and question-answering system built with Python. The system uses Milvus vector database for efficient semantic search and custom LLM models for intelligent responses. Features a command-line interface and web crawler for USCIS documents.
 
 ## 🚀 Features
 
 - **Document Processing**: Upload and process PDF, TXT, and MD files
 - **Semantic Search**: Advanced search using Milvus vector database
-- **AI-Powered Q&A**: Intelligent responses using OpenAI GPT models
+- **AI-Powered Q&A**: Intelligent responses using custom LLM models
 - **CLI Interface**: Easy-to-use command-line interface
 - **Web Crawler**: Extract content from USCIS.gov and other websites
-- **Dual Context Modes**: Regular semantic search and full-context analysis
+- **Smart Routing**: Intelligent context selection for optimal responses
 - **Real-time Processing**: Live document analysis and question answering
 
 ## 🛠️ Prerequisites
 
 - Python 3.11 or higher
 - Docker and Docker Compose
-- OpenAI API key
+- Custom LLM API endpoint and key
 - 8GB+ RAM (for Milvus and ML models)
 
 ## 📦 Installation
@@ -38,11 +38,11 @@ source env311/bin/activate  # On Windows: env311\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Set Up Environment Variables
-Create a `.env` file in the root directory:
-```bash
-OPENAI_API_KEY=your_openai_api_key_here
-LLM_API_URL=https://api.openai.com/v1/chat/completions
+### 4. Configure LLM Settings
+Update `config/config.py` with your LLM settings:
+```python
+LLM_API_URL = "https://your-llm-endpoint.com/v1/chat/completions"
+LLM_API_KEY = "your_llm_api_key_here"
 ```
 
 ### 5. Start Milvus Database
@@ -77,6 +77,9 @@ python cli_app.py --list
 
 # Delete a document
 python cli_app.py --delete "filename.pdf"
+
+# Delete all documents
+python cli_app.py --delete-all
 ```
 
 ### Interactive Commands
@@ -85,6 +88,7 @@ Once in interactive mode, you can use:
 - `upload <file>` - Upload and process a document
 - `search <query>` - Search for similar content
 - `delete <filename>` - Delete a document from the database
+- `delete all` - Delete all documents from the database
 - `list` - List all documents in the database
 - `help` - Show available commands
 - `quit` - Exit the application
@@ -110,11 +114,11 @@ python web_crawler.py --max-pages 30 --delay 2.0 --output "my_data"
 ```
 chatbot/
 ├── core/                    # Core functionality
-│   ├── rag_chain.py        # RAG implementation with dual context modes
+│   ├── rag_chain.py        # RAG implementation with smart routing
 │   ├── embedding.py        # Text embedding utilities
 │   └── milvus_utilis.py    # Milvus database operations
 ├── config/                 # Configuration files
-│   └── config.py          # Environment and API settings
+│   └── config.py          # LLM API settings
 ├── testing files/          # Test documents
 ├── cli_app.py             # Command-line interface
 ├── web_crawler.py         # Web crawler for USCIS and other sites
@@ -125,9 +129,12 @@ chatbot/
 
 ## 🔧 Configuration
 
-### Environment Variables
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `LLM_API_URL`: OpenAI API endpoint (default: https://api.openai.com/v1/chat/completions)
+### LLM Settings
+Update `config/config.py`:
+```python
+LLM_API_URL = "https://your-llm-endpoint.com/v1/chat/completions"
+LLM_API_KEY = "your_llm_api_key_here"
+```
 
 ### Milvus Settings
 The system uses Milvus 2.5.11 with:
@@ -139,26 +146,30 @@ The system uses Milvus 2.5.11 with:
 - Chunk size: 300 characters
 - Chunk overlap: 50 characters
 - Batch size: 32 chunks
+- Context limit: 8000 characters (prevents API errors)
 
 ## 🎨 Features in Detail
 
-### Dual Context Modes
+### Smart Routing System
 
-#### 1. Regular Context Mode
+The system intelligently routes questions to the most appropriate processing method:
+
+#### 1. Semantic Search Mode
 - Uses semantic search to find relevant chunks
-- Faster responses
-- Focused answers
-- Best for specific questions
+- Faster responses with focused answers
+- Best for specific, factual questions
+- Limited context to prevent API errors
 
-#### 2. Full Context Mode
-- Uses all available document chunks
-- More comprehensive responses
-- Creative and insightful answers
-- Best for broad or analytical questions
+#### 2. Specific Question Mode
+- Handles vague or overly broad questions
+- Guides users to ask more specific questions
+- Prevents processing of huge contexts
+- Improves response quality and speed
 
 ### Web Crawler Capabilities
 - **USCIS Integration**: Specialized crawler for USCIS.gov
-- **Content Extraction**: Intelligent text extraction from various page structures
+- **AI-Powered Filtering**: Intelligent content relevance detection
+- **Content Extraction**: Smart text extraction from various page structures
 - **Rate Limiting**: Respectful crawling with configurable delays
 - **Content Cleaning**: Automatic removal of navigation and non-content elements
 - **Multi-format Output**: Saves to structured text files
@@ -183,10 +194,11 @@ docker-compose down
 docker-compose up -d
 ```
 
-#### API Key Error
+#### LLM API Error
 ```bash
-# Ensure .env file exists and contains:
-OPENAI_API_KEY=your_actual_api_key_here
+# Check config/config.py contains correct settings:
+LLM_API_URL = "https://your-llm-endpoint.com/v1/chat/completions"
+LLM_API_KEY = "your_llm_api_key_here"
 ```
 
 #### Memory Issues
@@ -200,7 +212,7 @@ OPENAI_API_KEY=your_actual_api_key_here
 
 ## 🔒 Security
 
-- API keys are stored in environment variables
+- API keys are stored in configuration files
 - No sensitive data is committed to the repository
 - Large files and virtual environments are excluded
 - Rate limiting prevents server overload
@@ -211,6 +223,7 @@ OPENAI_API_KEY=your_actual_api_key_here
 - **Search Speed**: ~0.5 seconds for semantic search
 - **Response Time**: 2-5 seconds for AI responses
 - **Memory Usage**: ~2GB for typical document sets
+- **Context Limit**: 8000 characters to prevent API errors
 
 ## 🤝 Contributing
 
@@ -227,7 +240,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## 🙏 Acknowledgments
 
 - [Milvus](https://milvus.io/) for vector database
-- [OpenAI](https://openai.com/) for GPT models
 - [Sentence Transformers](https://www.sbert.net/) for embeddings
 - [USCIS](https://www.uscis.gov/) for immigration information
 
@@ -239,5 +251,3 @@ For issues and questions:
 3. Open an issue on GitHub
 
 ---
-
-**Built with ❤️ for efficient document processing and AI-powered question answering** 

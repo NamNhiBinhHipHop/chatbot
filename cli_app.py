@@ -7,8 +7,11 @@ import os
 import sys
 import argparse
 import shlex
+import json
+import datetime
+import re
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Optional
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -17,6 +20,87 @@ from core.rag_chain import ask_question_smart_with_toolcall, ask_llm_with_contex
 from core.milvus_utilis import save_to_milvus, search_similar_chunks, delete_file, delete_all, collection
 from core.embedding import split_into_chunks
 import fitz  # PyMuPDF
+
+class ConversationMemory:
+    """Manages conversation history for the CLI app"""
+    
+    def __init__(self, session_id: Optional[str] = None):
+        self.session_id = session_id or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.history: List[Dict] = []
+        self.history_file = Path(f"conversation_history_{self.session_id}.json")
+        
+    def _clean_answer(self, answer: str) -> str:
+        """Remove thinking tags and clean up the answer"""
+        # Remove <think>...</think> tags and their content
+        answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL)
+        # Remove any remaining thinking-related text
+        answer = re.sub(r'<THINK>.*?</THINK>', '', answer, flags=re.DOTALL)
+        # Clean up extra whitespace
+        answer = re.sub(r'\n\s*\n', '\n\n', answer)
+        answer = answer.strip()
+        return answer
+        
+    def add_ask_query(self, question: str, answer: str):
+        """Add an ask query with its answer"""
+        # Clean the answer before storing
+        cleaned_answer = self._clean_answer(answer)
+        entry = {
+            "question": question,
+            "answer": cleaned_answer
+        }
+        self.history.append(entry)
+        self._save_history()
+        
+    def show_history(self):
+        """Display conversation history"""
+        if not self.history:
+            print("📝 No conversation history yet.")
+            return
+            
+        print(f"\n📝 Conversation History:")
+        print("=" * 50)
+        
+        for i, entry in enumerate(self.history, 1):
+            question = entry["question"]
+            answer = entry["answer"]
+            
+            print(f"\n{i}. Q: {question}")
+            answer_preview = answer[:150] + "..." if len(answer) > 150 else answer
+            print(f"   A: {answer_preview}")
+        
+        print("=" * 50)
+        
+    def _save_history(self):
+        """Save history to file"""
+        try:
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                json.dump(self.history, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not save conversation history: {e}")
+            
+    def clear_history(self):
+        """Clear conversation history and delete file"""
+        self.history = []
+        try:
+            if self.history_file.exists():
+                self.history_file.unlink()
+                print("🗑️ Conversation history cleared.")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete history file: {e}")
+            
+    def get_context_summary(self) -> str:
+        """Get a summary of recent conversation for context"""
+        if not self.history:
+            return ""
+            
+        recent_queries = self.history[-3:]  # Last 3 Q&A pairs
+        summary_parts = []
+        
+        for i, entry in enumerate(recent_queries, 1):
+            summary_parts.append(f"Q{i}: {entry['question']}")
+            summary_parts.append(f"A{i}: {entry['answer']}")
+                
+        return "\n".join(summary_parts)
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from a PDF file."""
@@ -85,11 +169,14 @@ def interactive_mode():
     print("  delete <filename>  - Delete a document from the database")
     print("  delete-all         - Delete ALL data from the database")
     print("  list               - List all documents in the database")
+    print("  history            - Show conversation history")
     print("  help               - Show this help message")
     print("  quit               - Exit the application")
     print("=" * 50)
     print("💡 Tip: Use quotes for file paths with spaces, e.g., upload \"testing files/document.pdf\"")
     print("=" * 50)
+    
+    conversation_memory = ConversationMemory()
     
     while True:
         try:
@@ -100,6 +187,7 @@ def interactive_mode():
                 
             if user_input.lower() == 'quit' or user_input.lower() == 'exit':
                 print("👋 Goodbye!")
+                conversation_memory.clear_history()
                 break
                 
             elif user_input.lower() == 'help':
@@ -110,9 +198,13 @@ def interactive_mode():
                 print("  delete <filename>  - Delete a document from the database")
                 print("  delete-all         - Delete ALL data from the database")
                 print("  list               - List all documents in the database")
+                print("  history            - Show conversation history")
                 print("  help               - Show this help message")
                 print("  quit               - Exit the application")
                 print("\n💡 Tip: Use quotes for file paths with spaces, e.g., upload \"testing files/document.pdf\"")
+                
+            elif user_input.lower() == 'history':
+                conversation_memory.show_history()
                 
             elif user_input.lower().startswith('ask '):
                 question = user_input[4:].strip()
@@ -120,7 +212,12 @@ def interactive_mode():
                     print(f"\n🤔 Question: {question}")
                     print("🔄 Thinking...")
                     try:
-                        answer = ask_question_smart_with_toolcall(question)
+                        # Get conversation context
+                        context = conversation_memory.get_context_summary()
+                        
+                        # Pass the context directly to the function
+                        answer = ask_question_smart_with_toolcall(question, context)
+                        conversation_memory.add_ask_query(question, answer)
                         print(f"\n💡 Answer: {answer}")
                     except Exception as e:
                         print(f"❌ Error: {e}")
@@ -203,16 +300,23 @@ def interactive_mode():
                 print(f"🤔 Question: {user_input}")
                 print("🔄 Thinking...")
                 try:
-                    answer = ask_question_smart_with_toolcall(user_input)
+                    # Get conversation context
+                    context = conversation_memory.get_context_summary()
+                    
+                    # Pass the context directly to the function
+                    answer = ask_question_smart_with_toolcall(user_input, context)
+                    conversation_memory.add_ask_query(user_input, answer)
                     print(f"\n💡 Answer: {answer}")
                 except Exception as e:
                     print(f"❌ Error: {e}")
                     
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
+            conversation_memory.clear_history()
             break
         except EOFError:
             print("\n👋 Goodbye!")
+            conversation_memory.clear_history()
             break
 
 def main():
