@@ -16,7 +16,7 @@ from typing import List, Dict, Optional
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.rag_chain import ask_question_smart_with_toolcall, ask_llm_with_context, ask_with_full_context
+from core.rag_chain import deep_search_pipeline
 from core.milvus_utilis import save_to_milvus, search_similar_chunks, delete_file, delete_all, collection
 from core.embedding import split_into_chunks
 import fitz  # PyMuPDF
@@ -216,7 +216,7 @@ def interactive_mode():
                         context = conversation_memory.get_context_summary()
                         
                         # Pass the context directly to the function
-                        answer = ask_question_smart_with_toolcall(question, context)
+                        answer = deep_search_pipeline(question)
                         conversation_memory.add_ask_query(question, answer)
                         print(f"\n💡 Answer: {answer}")
                     except Exception as e:
@@ -304,7 +304,7 @@ def interactive_mode():
                     context = conversation_memory.get_context_summary()
                     
                     # Pass the context directly to the function
-                    answer = ask_question_smart_with_toolcall(user_input, context)
+                    answer = deep_search_pipeline(user_input)
                     conversation_memory.add_ask_query(user_input, answer)
                     print(f"\n💡 Answer: {answer}")
                 except Exception as e:
@@ -339,7 +339,7 @@ def main():
             print(f"🤔 Question: {args.ask}")
             print("🔄 Thinking...")
             try:
-                answer = ask_question_smart_with_toolcall(args.ask)
+                answer = deep_search_pipeline(args.ask)
                 print(f"\n💡 Answer: {answer}")
             except Exception as e:
                 print(f"❌ Error: {e}")
