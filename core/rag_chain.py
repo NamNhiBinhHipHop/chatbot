@@ -28,9 +28,11 @@ def ask_llm(prompt: str) -> str:
     return response.json()["choices"][0]["message"]["content"]
 
 # --- Immigration Domain Detection ---
-def is_immigration_related(query: str) -> bool:
-    # Use LLM to classify if the query is about US immigration/citizenship
+def is_immigration_related(query: str, chat_history: str = "") -> bool:
     prompt = f"""
+CHAT HISTORY:
+{chat_history}
+
 You are an expert classifier. Determine if the following user question is about US immigration or citizenship (including visas, green cards, naturalization, USCIS, etc).
 
 QUESTION: "{query}"
@@ -43,12 +45,15 @@ Respond with ONLY YES or NO.
         return answer.startswith("YES")
     except Exception as e:
         print(f"⚠️ LLM classification error: {e}")
-        # Fallback: treat as not immigration-related
         return False
 
 # --- Query Expansion ---
-def query_expansion(query: str) -> list:
-    prompt = f"""You are a query expansion expert. Your task is to understand the user's information needs and generate diverse search queries that will help find comprehensive answers.
+def query_expansion(query: str, chat_history: str = "") -> list:
+    prompt = f"""
+CHAT HISTORY:
+{chat_history}
+
+You are a query expansion expert. Your task is to understand the user's information needs and generate diverse search queries that will help find comprehensive answers.
 
 Original query: {query}
 
@@ -104,9 +109,7 @@ Example of CORRECT response format:
 """
     try:
         response = ask_llm(prompt)
-        # Clean up response: remove whitespace, newlines, etc.
         response = response.strip()
-        # Find the first '[' and last ']' to extract the JSON array
         start = response.find('[')
         end = response.rfind(']')
         if start != -1 and end != -1 and end > start:
@@ -121,13 +124,15 @@ Example of CORRECT response format:
         return [query]
 
 # --- Semantic Search for Subquestions ---
-def ask_llm_with_context(query: str) -> str:
-    # Use semantic search to get relevant context, then ask LLM
+def ask_llm_with_context(query: str, chat_history: str = "") -> str:
     results = search_similar_chunks(query, top_k=1000)
     if not results:
         return "No relevant information found."
     context = "\n".join([r["chunk"] for r in results])
     prompt = f"""
+CHAT HISTORY:
+{chat_history}
+
 Based on the following document content, answer this question: {query}
 
 Document content:
@@ -138,10 +143,14 @@ Answer the question clearly and concisely using only the information provided ab
     return ask_llm(prompt)
 
 # --- Quality Check for Answers ---
-def check_answers_quality(questions: list, answers: list, original_query: str = "", iteration: int = 1, previous_knowledge_gaps: list = None, max_iterations: int = 3) -> (bool, list):
+def check_answers_quality(questions: list, answers: list, original_query: str = "", iteration: int = 1, previous_knowledge_gaps: list = None, max_iterations: int = 3, chat_history: str = "") -> (bool, list):
     if previous_knowledge_gaps is None:
         previous_knowledge_gaps = []
-    prompt = f"""You are an expert immigration lawyer and legal reasoning agent. Your task is to analyze search results, identify relevant legal information, and determine if further research is needed to provide accurate immigration advice.
+    prompt = f"""
+CHAT HISTORY:
+{chat_history}
+
+You are an expert immigration lawyer and legal reasoning agent. Your task is to analyze search results, identify relevant legal information, and determine if further research is needed to provide accurate immigration advice.
 
 ORIGINAL QUERY: {original_query}
 
@@ -192,10 +201,13 @@ IMPORTANT: If this is already iteration {max_iterations} or higher, set "search_
         return True, questions
 
 # --- Outline Generation ---
-def write_outline(original_query: str, subquestions: list, answers: list) -> str:
-    # Combine subquestions and answers into a search context/details string
+def write_outline(original_query: str, subquestions: list, answers: list, chat_history: str = "") -> str:
     search_context = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(subquestions, answers)])
-    prompt = f"""You are an expert research analyst and outline creator. Your task is to create a well-structured outline for answering a query based on search results.
+    prompt = f"""
+CHAT HISTORY:
+{chat_history}
+
+You are an expert research analyst and outline creator. Your task is to create a well-structured outline for answering a query based on search results.
 
 ORIGINAL QUERY: {original_query}
 
@@ -256,9 +268,13 @@ The outline should follow this structure:
         return "(Outline unavailable due to error)"
 
 # --- Final Answer Generation ---
-def generate_final_answer(original_query: str, subquestions: list, answers: list, outline: str) -> str:
+def generate_final_answer(original_query: str, subquestions: list, answers: list, outline: str, chat_history: str = "") -> str:
     search_context = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(subquestions, answers)])
-    prompt = f"""You are an expert content writer. Your task is to expand an outline into a comprehensive, detailed answer.
+    prompt = f"""
+CHAT HISTORY:
+{chat_history}
+
+You are an expert content writer. Your task is to expand an outline into a comprehensive, detailed answer.
 
 ORIGINAL QUERY: {original_query}
 
@@ -295,7 +311,7 @@ while carefully following the outline structure and maintaining strict adherence
         return answer.strip()
     except Exception as e:
         print(f"⚠️ Error in generate_final_answer: {e}")
-        return "Nothing"
+        return outline + "\n\n" + "\n\n".join(answers)
 
 def clean_llm_response(text: str) -> str:
     """Remove <think>...</think> and <THINK>...</THINK> tags and extra whitespace from LLM output."""
@@ -304,39 +320,35 @@ def clean_llm_response(text: str) -> str:
     return text.strip()
 
 # --- Main Deep Search Pipeline ---
-def deep_search_pipeline(query: str) -> str:
-    if not is_immigration_related(query):
-        # Not immigration-related: direct LLM answer only
+def deep_search_pipeline(query: str, chat_history: str = "") -> str:
+    if not is_immigration_related(query, chat_history=chat_history):
         prompt = f"""
-        You are an expert immigration lawyer specialized in US immigration and citizenship. Your task is to give legal advice based on the original query.
+CHAT HISTORY:
+{chat_history}
 
-        USER QUERY: {query}
+You are an expert immigration lawyer specialized in US immigration and citizenship. Your task is to give legal advice based on the original query.
 
-        Please respond accordingly, if the user query is not related to immigration, please let them know.
-        """
+USER QUERY: {query}
+
+Please respond accordingly, if the user query is not related to immigration, please let them know.
+"""
         direct_answer = ask_llm(prompt)
         return clean_llm_response(direct_answer)
     
-    # Immigration-related: expand/refine into subquestions
-    subquestions = query_expansion(query)
+    subquestions = query_expansion(query, chat_history=chat_history)
     answers = [None] * len(subquestions)
     max_iterations = 3
     previous_knowledge_gaps = []
     for i in range(max_iterations):
-        # Answer each subquestion
-        answers = [ask_llm_with_context(q) for q in subquestions]
-        # Check quality
+        answers = [ask_llm_with_context(q, chat_history=chat_history) for q in subquestions]
         accepted, new_subquestions = check_answers_quality(
-            subquestions, answers, original_query=query, iteration=i + 1, previous_knowledge_gaps=previous_knowledge_gaps, max_iterations=max_iterations
+            subquestions, answers, original_query=query, iteration=i + 1, previous_knowledge_gaps=previous_knowledge_gaps, max_iterations=max_iterations, chat_history=chat_history
         )
-        # Update previous_knowledge_gaps if not accepted
         if not accepted:
             previous_knowledge_gaps.extend([q for q in new_subquestions if q not in previous_knowledge_gaps])
             subquestions = new_subquestions
         if accepted:
             break
-    # Write outline before generating final answer
-    outline = write_outline(query, subquestions, answers)
-    # Generate final answer
-    final_answer = generate_final_answer(query, subquestions, answers, outline)
+    outline = write_outline(query, subquestions, answers, chat_history=chat_history)
+    final_answer = generate_final_answer(query, subquestions, answers, outline, chat_history=chat_history)
     return clean_llm_response(final_answer)
