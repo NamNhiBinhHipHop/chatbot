@@ -162,9 +162,9 @@ def main():
     # Display chat history (top to bottom)
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
-            st.markdown(f"<div style='text-align: right; color: #2563eb; font-size: 1.2em;'><b>🧑‍💼 You:</b> {msg['content']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: right; font-size: 1.2em;'><b>🧑‍💼 You:</b> {msg['content']}</div>", unsafe_allow_html=True)
         else:
-            st.markdown(f"<div style='text-align: left; color: #222;'><b>🤖 Assistant:</b> {msg['content']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: left;'><b>🤖 Assistant:</b> {msg['content']}</div>", unsafe_allow_html=True)
     
     # Chat input at the bottom
     with st.form(key="chat_form", clear_on_submit=True):
