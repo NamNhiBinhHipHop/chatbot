@@ -162,7 +162,7 @@ def main():
     # Display chat history (top to bottom)
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
-            st.markdown(f"<div style='text-align: right; color: #2563eb;'><b>🧑‍💼 You:</b> {msg['content']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: right; color: #2563eb; font-size: 1.2em;'><b>🧑‍💼 You:</b> {msg['content']}</div>", unsafe_allow_html=True)
         else:
             st.markdown(f"<div style='text-align: left; color: #222;'><b>🤖 Assistant:</b> {msg['content']}</div>", unsafe_allow_html=True)
     
@@ -172,15 +172,24 @@ def main():
         submit = st.form_submit_button("Send")
     
     if submit and user_input:
-        # Add user message to history
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         with st.spinner("🤔 Thinking..."):
-            # Build conversation context for backend
-            context = "\n".join([f"Q{i//2+1}: {msg['content']}" if msg['role']=='user' else f"A{i//2+1}: {msg['content']}" for i, msg in enumerate(st.session_state.chat_history)])
-            # Only pass last 6 messages (3 Q&A pairs) for context
-            context = "\n".join(context.split("\n")[-6:])
-            answer = deep_search_pipeline(user_input)
-        # Add assistant message to history
+            # Build full cleaned Q&A chat history
+            chat_history = []
+            q_num = 1
+            for msg in st.session_state.chat_history:
+                if msg["role"] == "user":
+                    chat_history.append(f"Q{q_num}: {msg['content']}")
+                else:
+                    # Clean answer of <think> tags
+                    import re
+                    cleaned = re.sub(r'<think>.*?</think>', '', msg['content'], flags=re.DOTALL)
+                    cleaned = re.sub(r'<THINK>.*?</THINK>', '', cleaned, flags=re.DOTALL)
+                    cleaned = cleaned.strip()
+                    chat_history.append(f"A{q_num}: {cleaned}")
+                    q_num += 1
+            context = "\n".join(chat_history)
+            answer = deep_search_pipeline(user_input, chat_history=context)
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
         st.rerun()
 
