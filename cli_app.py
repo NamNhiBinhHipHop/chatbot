@@ -214,9 +214,8 @@ def interactive_mode():
                     try:
                         # Get conversation context
                         context = conversation_memory.get_context_summary()
-                        
                         # Pass the context directly to the function
-                        answer = deep_search_pipeline(question)
+                        answer = deep_search_pipeline(question, chat_history=context)
                         conversation_memory.add_ask_query(question, answer)
                         print(f"\n💡 Answer: {answer}")
                     except Exception as e:
@@ -302,9 +301,8 @@ def interactive_mode():
                 try:
                     # Get conversation context
                     context = conversation_memory.get_context_summary()
-                    
                     # Pass the context directly to the function
-                    answer = deep_search_pipeline(user_input)
+                    answer = deep_search_pipeline(user_input, chat_history=context)
                     conversation_memory.add_ask_query(user_input, answer)
                     print(f"\n💡 Answer: {answer}")
                 except Exception as e:
@@ -339,7 +337,7 @@ def main():
             print(f"🤔 Question: {args.ask}")
             print("🔄 Thinking...")
             try:
-                answer = deep_search_pipeline(args.ask)
+                answer = deep_search_pipeline(args.ask, chat_history="")
                 print(f"\n💡 Answer: {answer}")
             except Exception as e:
                 print(f"❌ Error: {e}")
