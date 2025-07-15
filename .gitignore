@@ -15,6 +15,7 @@ venv.bak/
 env311_py311/
 volumes/
 crawled_data/
+config/
 *.log
 
 # Virtual Environment
