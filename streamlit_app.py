@@ -15,18 +15,20 @@ from typing import List, Dict, Optional
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.rag_chain import ask_question_smart_with_toolcall, ask_llm_with_context, ask_with_full_context
+from core.rag_chain import deep_search_pipeline
 from core.milvus_utilis import save_to_milvus, search_similar_chunks, delete_file, delete_all, collection
 from core.embedding import split_into_chunks
 import fitz  # PyMuPDF
 
-# Page configuration
+# Set Streamlit to run on port 8686
 st.set_page_config(
-    page_title="AI Document Assistant",
+    page_title="AI Immigration Lawyer Assistant",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+os.environ["STREAMLIT_SERVER_PORT"] = "8686"
 
 class StreamlitConversationMemory:
     """Manages conversation history for the Streamlit app"""
@@ -140,11 +142,10 @@ def get_document_list():
         return []
 
 def main():
-    # Initialize session state
-    if 'conversation_memory' not in st.session_state:
-        st.session_state.conversation_memory = StreamlitConversationMemory()
+    # Initialize session state for chat history
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []  # List of dicts: {"role": "user"/"assistant", "content": ...}
     
-    # Header
     st.title("🤖 AI Immigration Lawyer Assistant")
     st.markdown("**US Immigration & Citizenship Document Analysis, AI to help you with your immigration questions**")
     
@@ -152,57 +153,36 @@ def main():
     with st.sidebar:
         st.subheader("💬 Conversation")
         if st.button("🗑️ Clear Chat History"):
-            st.session_state.conversation_memory.clear_history()
+            st.session_state.chat_history = []
             st.rerun()
     
-    # Main content area (single column, chat only)
+    # Main content area: Live chat interface
     st.header("💬 Chat Interface")
     
-    # Chat input
-    st.subheader("Ask a Question")
-    question = st.text_input(
-        "Type your question here...",
-        placeholder="e.g., What are the requirements for naturalization?",
-        key="question_input"
-    )
-    
-    # Ask button and answer display
-    if st.button("🤖 Ask", type="primary"):
-        if question:
-            with st.spinner("🤔 Thinking..."):
-                try:
-                    # Get conversation context
-                    context = st.session_state.conversation_memory.get_context_summary()
-                    
-                    # Pass the context directly to the function
-                    answer = ask_question_smart_with_toolcall(question, context)
-                    st.session_state.conversation_memory.add_ask_query(question, answer)
-                    
-                    # Display the answer immediately
-                    st.success("💡 Answer:")
-                    st.write(answer)
-                    
-                    # Clear the input
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"❌ Error: {e}")
+    # Display chat history (top to bottom)
+    for msg in st.session_state.chat_history:
+        if msg["role"] == "user":
+            st.markdown(f"<div style='text-align: right; color: #2563eb;'><b>🧑‍💼 You:</b> {msg['content']}</div>", unsafe_allow_html=True)
         else:
-            st.warning("Please enter a question")
+            st.markdown(f"<div style='text-align: left; color: #222;'><b>🤖 Assistant:</b> {msg['content']}</div>", unsafe_allow_html=True)
     
-    # Show the most recent answer if available
-    if st.session_state.conversation_memory.history:
-        latest_entry = st.session_state.conversation_memory.history[-1]
-        st.success("💡 Latest Answer:")
-        st.write(latest_entry['answer'])
+    # Chat input at the bottom
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_input = st.text_input("Type your message...", placeholder="e.g., What are the requirements for naturalization?", key="chat_input")
+        submit = st.form_submit_button("Send")
     
-    # Chat history display (without timestamps) - right below the answer
-    if st.session_state.conversation_memory.history:
-        st.subheader("📝 Conversation History")
-        for i, entry in enumerate(st.session_state.conversation_memory.history):
-            with st.expander(f"Q{i+1}: {entry['question']}"):
-                st.write(f"**Question:** {entry['question']}")
-                st.write(f"**Answer:** {entry['answer']}")
+    if submit and user_input:
+        # Add user message to history
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        with st.spinner("🤔 Thinking..."):
+            # Build conversation context for backend
+            context = "\n".join([f"Q{i//2+1}: {msg['content']}" if msg['role']=='user' else f"A{i//2+1}: {msg['content']}" for i, msg in enumerate(st.session_state.chat_history)])
+            # Only pass last 6 messages (3 Q&A pairs) for context
+            context = "\n".join(context.split("\n")[-6:])
+            answer = deep_search_pipeline(user_input)
+        # Add assistant message to history
+        st.session_state.chat_history.append({"role": "assistant", "content": answer})
+        st.rerun()
 
 if __name__ == "__main__":
     main() 
