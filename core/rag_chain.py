@@ -37,18 +37,22 @@ You are an expert classifier. Determine if the following user question is about 
 
 QUESTION: "{query}"
 
+NOTE: the question itself can be unclear, ambiguous, read the whole chat history to comprehend it
+
 Respond with ONLY YES or NO.
 """
     try:
         response = ask_llm(prompt)
         answer = response.strip().upper()
-        return answer.startswith("YES")
+        add_debug(f"🔍 is_immigration_related: {answer}")
+        return answer.endswith("YES")
     except Exception as e:
-        print(f"⚠️ LLM classification error: {e}")
+        add_debug(f"⚠️ LLM classification error: {e}")
         return False
 
 # --- Query Expansion ---
 def query_expansion(query: str, chat_history: str = "") -> list:
+    add_debug("Start expanding queries")
     prompt = f"""
 CHAT HISTORY:
 {chat_history}
@@ -58,10 +62,10 @@ You are a query expansion expert. Your task is to understand the user's informat
 Original query: {query}
 
 # ANALYSIS PROCESS
-First, analyze the query carefully:
-1. What is the core information need behind this query?
+First, analyze the query carefully with context:
+1. What is the core information need behind this query given all the chat history?
 2. What are the key entities and concepts in this query?
-3. What are 5-7 DIFFERENT ASPECTS or angles of this topic that would be valuable to explore?
+3. What are 5-7 DIFFERENT ASPECTS or angles of this topic that would be valuable to explore in this specific case of this user through the chat history?
 4. What related concepts would provide useful context for a complete answer?
 
 # QUERY GENERATION INSTRUCTIONS
@@ -115,24 +119,24 @@ Example of CORRECT response format:
         if start != -1 and end != -1 and end > start:
             json_str = response[start:end+1]
             subquestions = json.loads(json_str)
+            add_debug(f"🔍 Subquestions: {subquestions}")
             if isinstance(subquestions, list) and all(isinstance(q, str) for q in subquestions):
                 return subquestions
-        print("⚠️ LLM did not return a valid JSON list of strings. Returning original query as fallback.")
+        add_debug("⚠️ LLM did not return a valid JSON list of strings. Returning original query as fallback.")
         return [query]
     except Exception as e:
-        print(f"⚠️ Error in query_expansion: {e}")
+        add_debug(f"⚠️ Error in query_expansion: {e}")
         return [query]
 
 # --- Semantic Search for Subquestions ---
 def ask_llm_with_context(query: str, chat_history: str = "") -> str:
-    results = search_similar_chunks(query, top_k=1000)
+    results = search_similar_chunks(query, top_k=300)
     if not results:
         return "No relevant information found."
     context = "\n".join([r["chunk"] for r in results])
     prompt = f"""
 CHAT HISTORY:
 {chat_history}
-
 Based on the following document content, answer this question: {query}
 
 Document content:
@@ -143,7 +147,7 @@ Answer the question clearly and concisely using only the information provided ab
     return ask_llm(prompt)
 
 # --- Quality Check for Answers ---
-def check_answers_quality(questions: list, answers: list, original_query: str = "", iteration: int = 1, previous_knowledge_gaps: list = None, max_iterations: int = 3, chat_history: str = "") -> (bool, list):
+def check_answers_quality(questions: list, answers: list, original_query: str = "", iteration: int = 1, previous_knowledge_gaps: list = [], max_iterations: int = 3, chat_history: str = "") -> tuple[bool, list]:
     if previous_knowledge_gaps is None:
         previous_knowledge_gaps = []
     prompt = f"""
@@ -186,6 +190,7 @@ IMPORTANT: If this is already iteration {max_iterations} or higher, set "search_
     try:
         response = ask_llm(prompt)
         response = response.strip()
+        add_debug(f"🔍 Check answers quality response: {response}")
         start = response.find('{')
         end = response.rfind('}')
         if start != -1 and end != -1 and end > start:
@@ -194,14 +199,15 @@ IMPORTANT: If this is already iteration {max_iterations} or higher, set "search_
             accepted = bool(result.get("search_complete", False))
             new_subquestions = result.get("new_queries", []) if not accepted else questions
             return accepted, new_subquestions
-        print("⚠️ LLM did not return a valid JSON object. Accepting by default.")
+        add_debug("⚠️ LLM did not return a valid JSON object. Accepting by default.")
         return True, questions
     except Exception as e:
-        print(f"⚠️ Error in check_answers_quality: {e}")
+        add_debug(f"⚠️ Error in check_answers_quality: {e}")
         return True, questions
 
 # --- Outline Generation ---
 def write_outline(original_query: str, subquestions: list, answers: list, chat_history: str = "") -> str:
+    add_debug("Start writing outline")
     search_context = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(subquestions, answers)])
     prompt = f"""
 CHAT HISTORY:
@@ -262,13 +268,15 @@ The outline should follow this structure:
 """
     try:
         outline = ask_llm(prompt)
+        print("DONE")
         return outline.strip()
     except Exception as e:
-        print(f"⚠️ Error in write_outline: {e}")
+        add_debug(f"⚠️ Error in write_outline: {e}")
         return "(Outline unavailable due to error)"
 
 # --- Final Answer Generation ---
 def generate_final_answer(original_query: str, subquestions: list, answers: list, outline: str, chat_history: str = "") -> str:
+    add_debug("Start generating final answer")
     search_context = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(subquestions, answers)])
     prompt = f"""
 CHAT HISTORY:
@@ -297,20 +305,19 @@ IMPORTANT RULES:
 1. ONLY include information that is directly supported by the search context
 2. DO NOT make up or infer information not present in the search results
 3. If information is missing or unclear, note it as a limitation rather than making assumptions
-4. Clearly cite sources for each piece of information using the syntax: \\cite{{$ID}} for each fact or claim, for all key_points, reasoning and knowledge_gaps. Where the $ID is mentioned in the SEARCH DETAILS and OUTLINE.
-5. Use direct quotes from search results when appropriate
-6. Maintain academic rigor and avoid speculation
-7. If the search context is insufficient to answer a point, clearly state this limitation
-8. Do not use phrases like "based on the search results" or "according to the information provided" - instead cite specific sources
+4. Use direct quotes from search results when appropriate
+5. Maintain academic rigor and avoid speculation
+6. If the search context is insufficient to answer a point, clearly state this limitation
 
 Your expanded answer should be thorough, informative, and directly address the original query,
 while carefully following the outline structure and maintaining strict adherence to the search context.
 """
     try:
         answer = ask_llm(prompt)
+        print("DONE")
         return answer.strip()
     except Exception as e:
-        print(f"⚠️ Error in generate_final_answer: {e}")
+        add_debug(f"⚠️ Error in generate_final_answer: {e}")
         return outline + "\n\n" + "\n\n".join(answers)
 
 def clean_llm_response(text: str) -> str:
@@ -319,8 +326,17 @@ def clean_llm_response(text: str) -> str:
     text = re.sub(r'<THINK>.*?</THINK>', '', text, flags=re.DOTALL)
     return text.strip()
 
+# --- Global debug log for Streamlit ---
+debug_log = ""
+
+def add_debug(msg: str):
+    global debug_log
+    debug_log += str(msg) + "\n"
+    print(msg)
+
 # --- Main Deep Search Pipeline ---
 def deep_search_pipeline(query: str, chat_history: str = "") -> str:
+    add_debug("AI have received the question")
     if not is_immigration_related(query, chat_history=chat_history):
         prompt = f"""
 CHAT HISTORY:
@@ -332,6 +348,7 @@ USER QUERY: {query}
 
 Please respond accordingly, if the user query is not related to immigration, please let them know.
 """
+        add_debug("this use direct answer")
         direct_answer = ask_llm(prompt)
         return clean_llm_response(direct_answer)
     
@@ -340,7 +357,10 @@ Please respond accordingly, if the user query is not related to immigration, ple
     max_iterations = 3
     previous_knowledge_gaps = []
     for i in range(max_iterations):
-        answers = [ask_llm_with_context(q, chat_history=chat_history) for q in subquestions]
+        answers = []
+        for q in subquestions:
+            ans = ask_llm_with_context(q, chat_history=chat_history)
+            answers.append(ans)
         accepted, new_subquestions = check_answers_quality(
             subquestions, answers, original_query=query, iteration=i + 1, previous_knowledge_gaps=previous_knowledge_gaps, max_iterations=max_iterations, chat_history=chat_history
         )
@@ -351,4 +371,5 @@ Please respond accordingly, if the user query is not related to immigration, ple
             break
     outline = write_outline(query, subquestions, answers, chat_history=chat_history)
     final_answer = generate_final_answer(query, subquestions, answers, outline, chat_history=chat_history)
+    print("DONE")
     return clean_llm_response(final_answer)
