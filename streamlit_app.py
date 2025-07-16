@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.rag_chain import deep_search_pipeline
+from core.rag_chain import deep_search_pipeline, debug_log
 from core.milvus_utilis import save_to_milvus, search_similar_chunks, delete_file, delete_all, collection
 from core.embedding import split_into_chunks
 import fitz  # PyMuPDF
@@ -191,6 +191,9 @@ def main():
             context = "\n".join(chat_history)
             answer = deep_search_pipeline(user_input, chat_history=context)
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
+        # Show debug log in an expander
+        with st.expander("🧠 Show LLM Thinking / Debug Output"):
+            st.code(debug_log)
         st.rerun()
 
 if __name__ == "__main__":
