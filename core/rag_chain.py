@@ -7,6 +7,7 @@ from core.milvus_utilis import search_similar_chunks
 import requests
 import json
 import re
+import time
 
 # --- LLM API Call ---
 def ask_llm(prompt: str) -> str:
@@ -52,7 +53,7 @@ Respond with ONLY YES or NO.
 
 # --- Query Expansion ---
 def query_expansion(query: str, chat_history: str = "") -> list:
-    add_debug("Start expanding queries")
+    add_debug("START EXPANDING QUERIES")
     prompt = f"""
 CHAT HISTORY:
 {chat_history}
@@ -207,7 +208,7 @@ IMPORTANT: If this is already iteration {max_iterations} or higher, set "search_
 
 # --- Outline Generation ---
 def write_outline(original_query: str, subquestions: list, answers: list, chat_history: str = "") -> str:
-    add_debug("Start writing outline")
+    add_debug("START WRITING OUTLINE")
     search_context = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(subquestions, answers)])
     prompt = f"""
 CHAT HISTORY:
@@ -268,7 +269,7 @@ The outline should follow this structure:
 """
     try:
         outline = ask_llm(prompt)
-        print("DONE")
+        add_debug("WRITING OUTLINE DONE")
         return outline.strip()
     except Exception as e:
         add_debug(f"⚠️ Error in write_outline: {e}")
@@ -276,7 +277,7 @@ The outline should follow this structure:
 
 # --- Final Answer Generation ---
 def generate_final_answer(original_query: str, subquestions: list, answers: list, outline: str, chat_history: str = "") -> str:
-    add_debug("Start generating final answer")
+    add_debug("START GENERATING FINAL ANSWER")
     search_context = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(subquestions, answers)])
     prompt = f"""
 CHAT HISTORY:
@@ -300,6 +301,7 @@ For each section:
 3. Include technical details, examples, and comparisons suggested in the outline
 4. Ensure smooth transitions between sections
 5. Use an authoritative, clear writing style
+6. Extremely detailed references are not needed, like "(Q1)", "(A2)", ... will not be shown
 
 IMPORTANT RULES:
 1. ONLY include information that is directly supported by the search context
@@ -314,7 +316,7 @@ while carefully following the outline structure and maintaining strict adherence
 """
     try:
         answer = ask_llm(prompt)
-        print("DONE")
+        add_debug("GENERATING FINAL ANSWER DONE")
         return answer.strip()
     except Exception as e:
         add_debug(f"⚠️ Error in generate_final_answer: {e}")
@@ -328,16 +330,28 @@ def clean_llm_response(text: str) -> str:
 
 # --- Global debug log for Streamlit ---
 debug_log = ""
+debug_start_time = None
 
 def add_debug(msg: str):
-    global debug_log
-    debug_log += str(msg) + "\n"
-    print(msg)
+    global debug_log, debug_start_time
+    if debug_start_time is not None:
+        elapsed = time.time() - debug_start_time
+    else:
+        elapsed = 0.0
+    debug_log += f"[{elapsed:.2f}s] {msg}\n"
+    print(f"[{elapsed:.2f}s] {msg}")
 
 # --- Main Deep Search Pipeline ---
-def deep_search_pipeline(query: str, chat_history: str = "") -> str:
-    add_debug("AI have received the question")
+def deep_search_pipeline(query: str, chat_history: str = "", progress_callback=None) -> str:
+    global debug_log, debug_start_time
+    debug_log = ""
+    debug_start_time = time.time()
+    if progress_callback:
+        progress_callback(0.01, "Classifying query")
+    add_debug("START THE DEEP SEARCH PROCESS")
     if not is_immigration_related(query, chat_history=chat_history):
+        if progress_callback:
+            progress_callback(0.05, "Classifying query")
         prompt = f"""
 CHAT HISTORY:
 {chat_history}
@@ -350,17 +364,28 @@ Please respond accordingly, if the user query is not related to immigration, ple
 """
         add_debug("this use direct answer")
         direct_answer = ask_llm(prompt)
+        add_debug(f"TOTAL TIME: {time.time() - debug_start_time:.2f}s")
+        if progress_callback:
+            progress_callback(1.0, "Done")
         return clean_llm_response(direct_answer)
     
+    if progress_callback:
+        progress_callback(0.10, "Expanding queries")
     subquestions = query_expansion(query, chat_history=chat_history)
     answers = [None] * len(subquestions)
     max_iterations = 3
     previous_knowledge_gaps = []
     for i in range(max_iterations):
+        if progress_callback:
+            progress_callback(0.20 + i * 0.20, "Answering queries")
         answers = []
         for q in subquestions:
+            add_debug(f"🔍 Subquestion: {q}")
             ans = ask_llm_with_context(q, chat_history=chat_history)
+            add_debug(f"🔍 Answer to subquestion: {ans}")
             answers.append(ans)
+        if progress_callback:
+            progress_callback(0.30 + i * 0.20, "Checking answer quality")
         accepted, new_subquestions = check_answers_quality(
             subquestions, answers, original_query=query, iteration=i + 1, previous_knowledge_gaps=previous_knowledge_gaps, max_iterations=max_iterations, chat_history=chat_history
         )
@@ -369,7 +394,14 @@ Please respond accordingly, if the user query is not related to immigration, ple
             subquestions = new_subquestions
         if accepted:
             break
+    if progress_callback:
+        progress_callback(0.80, "Writing outline")
     outline = write_outline(query, subquestions, answers, chat_history=chat_history)
+    if progress_callback:
+        progress_callback(0.90, "Generating answer")
     final_answer = generate_final_answer(query, subquestions, answers, outline, chat_history=chat_history)
-    print("DONE")
+    add_debug(f"TOTAL TIME: {time.time() - debug_start_time:.2f}s")
+    if progress_callback:
+        progress_callback(1.0, "Done")
+    print("DEEP SEARCH DONE")
     return clean_llm_response(final_answer)
