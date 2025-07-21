@@ -2,16 +2,6 @@
 
 A powerful document processing and question-answering system built with Python. The system uses Milvus vector database for efficient semantic search and custom LLM models for intelligent responses. Features a command-line interface (for developers) and a Streamlit web app (for end users) for USCIS documents.
 
-## 🚀 Features
-
-- **Document Processing**: Upload and process PDF, TXT, and MD files
-- **Semantic Search**: Advanced search using Milvus vector database
-- **AI-Powered Q&A**: Intelligent responses using custom LLM models
-- **CLI Interface**: Easy-to-use command-line interface
-- **Web Crawler**: Extract content from USCIS.gov and other websites
-- **Smart Routing**: Intelligent context selection for optimal responses
-- **Real-time Processing**: Live document analysis and question answering
-
 ## 🛠️ Prerequisites
 
 - Python 3.11 or higher
