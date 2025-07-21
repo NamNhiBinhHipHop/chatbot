@@ -1,6 +1,6 @@
 # AI Document Assistant
 
-A powerful document processing and question-answering system built with Python. The system uses Milvus vector database for efficient semantic search and custom LLM models for intelligent responses. Features a command-line interface and web crawler for USCIS documents.
+A powerful document processing and question-answering system built with Python. The system uses Milvus vector database for efficient semantic search and custom LLM models for intelligent responses. Features a command-line interface (for developers) and a Streamlit web app (for end users) for USCIS documents.
 
 ## 🚀 Features
 
@@ -54,7 +54,16 @@ Wait for all containers to be healthy (check with `docker-compose ps`).
 
 ## 🎯 Usage
 
-### Command Line Interface
+### Streamlit Web App (Recommended for End Users)
+
+Run the following to launch the user-friendly web interface:
+```bash
+streamlit run streamlit_app.py
+```
+- Open your browser to http://localhost:8501
+- Upload, search, and interact with your documents easily
+
+### Command Line Interface (For Developers)
 
 #### Interactive Mode
 ```bash
