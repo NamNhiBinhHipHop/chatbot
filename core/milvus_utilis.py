@@ -54,11 +54,17 @@ def save_to_milvus(chunks: list[str], filename: str, vectors: list[list[float]] 
     # Prepare filename list
     filenames = [filename]*len(chunks)
 
-    # Insert into Milvus
-    collection.insert([ids, filenames, chunks, vectors])
-    # Only flush if we have a small number of chunks
-    if len(chunks) <= 10:
-        collection.flush()
+    # Insert into Milvus in batches
+    batch_size = 50
+    for i in range(0, len(chunks), batch_size):
+        batch_ids = ids[i:i+batch_size]
+        batch_filenames = filenames[i:i+batch_size]
+        batch_chunks = chunks[i:i+batch_size]
+        batch_vectors = vectors[i:i+batch_size]
+        collection.insert([batch_ids, batch_filenames, batch_chunks, batch_vectors])
+        # Optionally flush for small batches
+        if len(batch_chunks) <= 10:
+            collection.flush()
     
     save_time = time.time() - start_time
     print(f"✅ Saved {len(chunks)} chunks to Milvus in {save_time:.2f} seconds")
